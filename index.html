@@ -152,6 +152,7 @@ a.chip{color:inherit;text-decoration:none;cursor:pointer;display:inline-flex;ali
 a.chip::after{content:"↗";font-size:.8em;opacity:.55;transition:opacity .25s,transform .25s}
 a.chip:hover::after{opacity:1;transform:translate(1px,-1px)}
 a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
+.btn-primary[hidden],.btn-secondary[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -223,7 +224,7 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
         <div class="eyebrow reveal"><span class="dt"></span>La lista</div>
         <h2 class="h-display reveal">Mis <span class="grd">regalos</span></h2>
         <div class="gift-grid reveal" id="giftGrid"></div>
-        <div class="gift-tools reveal" id="giftTools" hidden><button type="button" class="btn-primary" id="addGiftBtn">+ Añadir regalo</button><span class="body-sm" id="giftMsg"></span></div>
+        <div class="gift-tools reveal" id="giftTools" hidden><button type="button" class="btn-primary" id="addGiftBtn">+ Añadir regalo</button><button type="button" class="btn-secondary" id="tokenBtn">Token de GitHub</button><span class="body-sm" id="giftMsg"></span></div>
       </div>
     </div>
   </section>
@@ -409,6 +410,7 @@ a.chip{color:inherit;text-decoration:none;cursor:pointer;display:inline-flex;ali
 a.chip::after{content:"↗";font-size:.8em;opacity:.55;transition:opacity .25s,transform .25s}
 a.chip:hover::after{opacity:1;transform:translate(1px,-1px)}
 a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
+.btn-primary[hidden],.btn-secondary[hidden]{display:none}
 &lt;/style>
 &lt;/head>
 &lt;body>
@@ -480,7 +482,7 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
         &lt;div class="eyebrow reveal">&lt;span class="dt">&lt;/span>La lista&lt;/div>
         &lt;h2 class="h-display reveal">Mis &lt;span class="grd">regalos&lt;/span>&lt;/h2>
         &lt;div class="gift-grid reveal" id="giftGrid">&lt;/div>
-        &lt;div class="gift-tools reveal" id="giftTools" hidden>&lt;button type="button" class="btn-primary" id="addGiftBtn">+ Añadir regalo&lt;/button>&lt;span class="body-sm" id="giftMsg">&lt;/span>&lt;/div>
+        &lt;div class="gift-tools reveal" id="giftTools" hidden>&lt;button type="button" class="btn-primary" id="addGiftBtn">+ Añadir regalo&lt;/button>&lt;button type="button" class="btn-secondary" id="tokenBtn">Token de GitHub&lt;/button>&lt;span class="body-sm" id="giftMsg">&lt;/span>&lt;/div>
       &lt;/div>
     &lt;/div>
   &lt;/section>
@@ -634,17 +636,40 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   }
   function fail(e){
     var c=e&amp;&amp;e.code;
-    if(c==='conflict')return '';
-    if(c==='not_writer'||c==='not_granted'||c==='not_declared'||c==='consent_required'||c==='capability_disabled'||c==='capability_removed'){canEdit=false;tools.hidden=true;render();return 'Esta vista es de solo lectura.'}
-    if(c==='too_large')return 'La página ya pesa demasiado: prueba con una foto más pequeña.';
-    if(c==='rate_limited')return 'Vas muy rápido, espera unos segundos.';
+    if(c==='no_token')return 'Falta el token de GitHub. Pulsa «Token de GitHub» y pégalo.';
+    if(c==='bad_token'){canEdit=false;addBtn.hidden=true;render();return 'El token no vale o no tiene permiso en este repositorio. Pulsa «Token de GitHub» para poner uno nuevo.'}
+    if(c==='conflict')return 'La carta ha cambiado en GitHub mientras tanto. Recarga la página e inténtalo de nuevo.';
     return 'No se ha podido guardar. Inténtalo de nuevo.';
   }
+  var GH={owner:'josegarpa2001-debug',repo:'Carta-de-reyes-Jose',path:'index.html',branch:'main'};
+  function getToken(){try{return localStorage.getItem('ghToken')||''}catch(e){return ''}}
+  function setToken(t){try{if(t)localStorage.setItem('ghToken',t);else localStorage.removeItem('ghToken')}catch(e){}}
+  function askToken(){
+    var t=window.prompt('Pega tu token de GitHub (solo se guarda en este navegador):','');
+    t=(t||'').trim();if(t)setToken(t);return t;
+  }
+  function toB64(str){
+    var bytes=new TextEncoder().encode(str),bin='',i,n=0x8000;
+    for(i=0;i&lt;bytes.length;i+=n)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+n));
+    return btoa(bin);
+  }
   async function persist(){
-    var blob=new Blob([buildDoc(gifts)],{type:'text/html'});
-    var dl=document.createElement('a');dl.href=URL.createObjectURL(blob);dl.download='index.html';
-    document.body.appendChild(dl);dl.click();dl.remove();
-    msg.textContent='Descargado index.html: súbelo a tu alojamiento para publicar el cambio.';
+    var tok=getToken();
+    if(!tok){tok=askToken();if(!tok){var e0=new Error('no_token');e0.code='no_token';throw e0}}
+    msg.textContent='Guardando en GitHub…';
+    var html=buildDoc(gifts);
+    var base='https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path;
+    var h={'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+    var r=await fetch(base+'?ref='+GH.branch,{headers:h,cache:'no-store'});
+    if(r.status===401||r.status===403){setToken('');var e1=new Error('bad_token');e1.code='bad_token';throw e1}
+    if(!r.ok){var e2=new Error('http');e2.code='http';throw e2}
+    var meta=await r.json();
+    var h2={'Authorization':h.Authorization,'Accept':h.Accept,'X-GitHub-Api-Version':h['X-GitHub-Api-Version'],'Content-Type':'application/json'};
+    var p=await fetch(base,{method:'PUT',headers:h2,body:JSON.stringify({message:'Actualizar carta de Reyes',content:toB64(html),sha:meta.sha,branch:GH.branch})});
+    if(p.status===401||p.status===403||p.status===404){setToken('');var e3=new Error('bad_token');e3.code='bad_token';throw e3}
+    if(p.status===409||p.status===422){var e4=new Error('conflict');e4.code='conflict';throw e4}
+    if(!p.ok){var e5=new Error('http');e5.code='http';throw e5}
+    msg.textContent='Guardado. En uno o dos minutos lo verá todo el mundo con el enlace de siempre.';
   }
   async function removeAt(i){
     var g=gifts.splice(i,1)[0];pending=-1;render();msg.textContent='Guardando…';
@@ -677,6 +702,18 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   function closeModal(){ov.classList.remove('open')}
   function idle(){working=false;saveBtn.disabled=false;saveBtn.textContent='Añadir'}
   addBtn.addEventListener('click',openModal);
+  document.getElementById('tokenBtn').addEventListener('click',async function(){
+    var t=window.prompt('Pega tu token de GitHub (déjalo vacío para borrar el guardado):','');
+    if(t===null)return;t=t.trim();
+    if(!t){setToken('');canEdit=false;addBtn.hidden=true;render();msg.textContent='Token borrado de este navegador.';return}
+    msg.textContent='Comprobando token…';
+    try{
+      var r=await fetch('https://api.github.com/repos/'+GH.owner+'/'+GH.repo,{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},cache:'no-store'});
+      var j=r.ok?await r.json():null;
+      if(j&amp;&amp;j.permissions&amp;&amp;j.permissions.push){setToken(t);canEdit=true;addBtn.hidden=false;render();msg.textContent='Listo: ya puedes añadir y quitar regalos.'}
+      else msg.textContent='Ese token no tiene permiso para escribir en este repositorio.';
+    }catch(e){msg.textContent='No se ha podido comprobar el token. Inténtalo de nuevo.'}
+  });
   cancelBtn.addEventListener('click',closeModal);
   ov.addEventListener('click',function(e){if(e.target===ov)closeModal()});
   document.addEventListener('keydown',function(e){if(e.key==='Escape'&amp;&amp;ov.classList.contains('open'))closeModal()});
@@ -701,7 +738,11 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   }catch(e){}
   (async function(){
     try{
-      if(location.hash==='#editar'){canEdit=true;tools.hidden=false;render()}
+      var hasTok=!!getToken();
+      if(hasTok||location.hash==='#editar'){
+        tools.hidden=false;addBtn.hidden=!hasTok;
+        if(hasTok){canEdit=true;render()}
+      }
     }catch(e){}
   })();
 })();
@@ -830,17 +871,40 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   }
   function fail(e){
     var c=e&&e.code;
-    if(c==='conflict')return '';
-    if(c==='not_writer'||c==='not_granted'||c==='not_declared'||c==='consent_required'||c==='capability_disabled'||c==='capability_removed'){canEdit=false;tools.hidden=true;render();return 'Esta vista es de solo lectura.'}
-    if(c==='too_large')return 'La página ya pesa demasiado: prueba con una foto más pequeña.';
-    if(c==='rate_limited')return 'Vas muy rápido, espera unos segundos.';
+    if(c==='no_token')return 'Falta el token de GitHub. Pulsa «Token de GitHub» y pégalo.';
+    if(c==='bad_token'){canEdit=false;addBtn.hidden=true;render();return 'El token no vale o no tiene permiso en este repositorio. Pulsa «Token de GitHub» para poner uno nuevo.'}
+    if(c==='conflict')return 'La carta ha cambiado en GitHub mientras tanto. Recarga la página e inténtalo de nuevo.';
     return 'No se ha podido guardar. Inténtalo de nuevo.';
   }
+  var GH={owner:'josegarpa2001-debug',repo:'Carta-de-reyes-Jose',path:'index.html',branch:'main'};
+  function getToken(){try{return localStorage.getItem('ghToken')||''}catch(e){return ''}}
+  function setToken(t){try{if(t)localStorage.setItem('ghToken',t);else localStorage.removeItem('ghToken')}catch(e){}}
+  function askToken(){
+    var t=window.prompt('Pega tu token de GitHub (solo se guarda en este navegador):','');
+    t=(t||'').trim();if(t)setToken(t);return t;
+  }
+  function toB64(str){
+    var bytes=new TextEncoder().encode(str),bin='',i,n=0x8000;
+    for(i=0;i<bytes.length;i+=n)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+n));
+    return btoa(bin);
+  }
   async function persist(){
-    var blob=new Blob([buildDoc(gifts)],{type:'text/html'});
-    var dl=document.createElement('a');dl.href=URL.createObjectURL(blob);dl.download='index.html';
-    document.body.appendChild(dl);dl.click();dl.remove();
-    msg.textContent='Descargado index.html: súbelo a tu alojamiento para publicar el cambio.';
+    var tok=getToken();
+    if(!tok){tok=askToken();if(!tok){var e0=new Error('no_token');e0.code='no_token';throw e0}}
+    msg.textContent='Guardando en GitHub…';
+    var html=buildDoc(gifts);
+    var base='https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path;
+    var h={'Authorization':'Bearer '+tok,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+    var r=await fetch(base+'?ref='+GH.branch,{headers:h,cache:'no-store'});
+    if(r.status===401||r.status===403){setToken('');var e1=new Error('bad_token');e1.code='bad_token';throw e1}
+    if(!r.ok){var e2=new Error('http');e2.code='http';throw e2}
+    var meta=await r.json();
+    var h2={'Authorization':h.Authorization,'Accept':h.Accept,'X-GitHub-Api-Version':h['X-GitHub-Api-Version'],'Content-Type':'application/json'};
+    var p=await fetch(base,{method:'PUT',headers:h2,body:JSON.stringify({message:'Actualizar carta de Reyes',content:toB64(html),sha:meta.sha,branch:GH.branch})});
+    if(p.status===401||p.status===403||p.status===404){setToken('');var e3=new Error('bad_token');e3.code='bad_token';throw e3}
+    if(p.status===409||p.status===422){var e4=new Error('conflict');e4.code='conflict';throw e4}
+    if(!p.ok){var e5=new Error('http');e5.code='http';throw e5}
+    msg.textContent='Guardado. En uno o dos minutos lo verá todo el mundo con el enlace de siempre.';
   }
   async function removeAt(i){
     var g=gifts.splice(i,1)[0];pending=-1;render();msg.textContent='Guardando…';
@@ -873,6 +937,18 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   function closeModal(){ov.classList.remove('open')}
   function idle(){working=false;saveBtn.disabled=false;saveBtn.textContent='Añadir'}
   addBtn.addEventListener('click',openModal);
+  document.getElementById('tokenBtn').addEventListener('click',async function(){
+    var t=window.prompt('Pega tu token de GitHub (déjalo vacío para borrar el guardado):','');
+    if(t===null)return;t=t.trim();
+    if(!t){setToken('');canEdit=false;addBtn.hidden=true;render();msg.textContent='Token borrado de este navegador.';return}
+    msg.textContent='Comprobando token…';
+    try{
+      var r=await fetch('https://api.github.com/repos/'+GH.owner+'/'+GH.repo,{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},cache:'no-store'});
+      var j=r.ok?await r.json():null;
+      if(j&&j.permissions&&j.permissions.push){setToken(t);canEdit=true;addBtn.hidden=false;render();msg.textContent='Listo: ya puedes añadir y quitar regalos.'}
+      else msg.textContent='Ese token no tiene permiso para escribir en este repositorio.';
+    }catch(e){msg.textContent='No se ha podido comprobar el token. Inténtalo de nuevo.'}
+  });
   cancelBtn.addEventListener('click',closeModal);
   ov.addEventListener('click',function(e){if(e.target===ov)closeModal()});
   document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ov.classList.contains('open'))closeModal()});
@@ -897,7 +973,11 @@ a.chip:focus-visible{outline:2px solid var(--indigo-soft);outline-offset:2px}
   }catch(e){}
   (async function(){
     try{
-      if(location.hash==='#editar'){canEdit=true;tools.hidden=false;render()}
+      var hasTok=!!getToken();
+      if(hasTok||location.hash==='#editar'){
+        tools.hidden=false;addBtn.hidden=!hasTok;
+        if(hasTok){canEdit=true;render()}
+      }
     }catch(e){}
   })();
 })();
